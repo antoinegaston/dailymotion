@@ -51,10 +51,8 @@ async def client(db_pool: Pool, db_conn: Connection) -> AsyncIterator[AsyncClien
         yield
 
     app.router.lifespan_context = _test_lifespan
-
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
         yield c
-
     app.dependency_overrides.clear()

@@ -3,6 +3,9 @@ from argon2 import PasswordHasher
 from asyncpg import Connection, UniqueViolationError
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.constants import EMAIL_VERIFICATION_BODY, EMAIL_VERIFICATION_SUBJECT
+from app.utils import send_email
+
 from .db import get_db
 from .models import User
 
@@ -24,3 +27,9 @@ async def create_user(user: User, db: Connection = Depends(get_db)):
             )
     except UniqueViolationError as exc:
         raise HTTPException(status_code=409, detail="Email already registered") from exc
+    await to_thread.run_sync(
+        send_email,
+        user.email,
+        EMAIL_VERIFICATION_SUBJECT,
+        EMAIL_VERIFICATION_BODY.format(code=1234),
+    )

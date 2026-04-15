@@ -1,30 +1,41 @@
 name: dailymotion
 
 services:
+  smtp:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   db:
     image: postgres:16
     environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: dailymotion
     ports:
-      - "${DB_PORT}:5432"
+      - "5432:5432"
     healthcheck:
-      test: pg_isready -U ${DB_USER} -d ${DB_NAME}
+      test: pg_isready -U user -d dailymotion
       interval: 5s
       retries: 10
 
   api:
     build: .
     environment:
-      DB_URL: postgresql://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
-      API_LOG_LEVEL: ${API_LOG_LEVEL}
-      API_LOG_FORMAT: ${API_LOG_FORMAT}
+      DB_URL: postgresql://user:password@db:5432/dailymotion
+      API_LOG_LEVEL: INFO
+      API_LOG_FORMAT: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+      SMTP_HOST: smtp
+      SMTP_PORT: 1025
+      SMTP_FROM_EMAIL: no-reply@example.com
     ports:
-      - "${API_PORT}:8000"
+      - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
+      smtp:
+        condition: service_started
     healthcheck:
       test:
         [
