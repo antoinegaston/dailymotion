@@ -2,18 +2,20 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.api import router
-from app.db import init_pool
-from app.schema import create_tables
+from src.api import router
+from src.services.cache import init_redis
+from src.services.db import create_tables, init_pool
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.pool = await init_pool()
+    app.state.redis = await init_redis()
     async with app.state.pool.acquire() as conn:
         await create_tables(conn)
     yield
     await app.state.pool.close()
+    await app.state.redis.aclose()
 
 
 app = FastAPI(

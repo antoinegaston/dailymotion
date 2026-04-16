@@ -1,5 +1,7 @@
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from typing import AsyncIterator
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
@@ -8,8 +10,9 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from testcontainers.postgres import PostgresContainer
 
-from app.db import get_db
-from app.schema import create_tables
+from src.config import get_settings
+from src.services.cache import get_redis
+from src.services.db import create_tables, get_db
 
 
 @pytest.fixture(scope="session")
@@ -37,17 +40,35 @@ async def db_conn(db_pool: Pool) -> AsyncIterator[Connection]:
 
 
 @pytest_asyncio.fixture
-async def client(db_pool: Pool, db_conn: Connection) -> AsyncIterator[AsyncClient]:
-    from app.main import app
+async def redis_client_mock() -> AsyncIterator[AsyncMock]:
+    redis = AsyncMock()
+    redis.set = AsyncMock(return_value=True)
+    yield redis
+
+
+@pytest_asyncio.fixture
+async def client(
+    db_pool: Pool, db_conn: Connection, redis_client_mock: AsyncMock
+) -> AsyncIterator[AsyncClient]:
+    from src.main import app
 
     async def _override_get_db() -> AsyncIterator[Connection]:
         yield db_conn
 
+    async def _override_get_redis() -> AsyncIterator[AsyncMock]:
+        yield redis_client_mock
+
+    async def _override_get_settings() -> AsyncIterator[SimpleNamespace]:
+        yield SimpleNamespace(verification_code_ttl_seconds=60)
+
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_redis] = _override_get_redis
+    app.dependency_overrides[get_settings] = _override_get_settings
 
     @asynccontextmanager
     async def _test_lifespan(_app: FastAPI):
         _app.state.pool = db_pool
+        _app.state.redis = redis_client_mock
         yield
 
     app.router.lifespan_context = _test_lifespan

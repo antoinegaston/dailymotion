@@ -20,19 +20,31 @@ services:
       interval: 5s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
   api:
     build: .
     environment:
       DB_URL: postgresql://user:password@db:5432/dailymotion
-      API_LOG_LEVEL: INFO
-      API_LOG_FORMAT: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+      REDIS_URL: redis://redis:6379/0
       SMTP_HOST: smtp
       SMTP_PORT: 1025
-      SMTP_FROM_EMAIL: no-reply@example.com
     ports:
       - "8000:8000"
+    volumes:
+      - ./src:/app/src
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       smtp:
         condition: service_started

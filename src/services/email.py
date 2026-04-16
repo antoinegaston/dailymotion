@@ -3,7 +3,7 @@ from email.message import EmailMessage
 
 from fastapi import HTTPException
 
-from app.config import get_settings
+from src.config import get_settings
 
 
 def send_email(to_email: str, subject: str, body: str) -> None:
