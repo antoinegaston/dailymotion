@@ -8,6 +8,10 @@ class User(BaseModel):
     password: Annotated[SecretStr, Field(min_length=8, max_length=128)]
 
 
+class InternalUser(User):
+    verified: bool = False
+
+
 class OutboundEmail(BaseModel):
     to_email: EmailStr
     subject: Annotated[str, Field(min_length=1, max_length=200)]

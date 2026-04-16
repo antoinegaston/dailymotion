@@ -1,10 +1,10 @@
 from contextlib import suppress
 from secrets import randbelow
+from typing import Annotated
 
 from anyio import to_thread
-from argon2 import PasswordHasher
 from asyncpg import Connection, UniqueViolationError
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
@@ -14,13 +14,13 @@ from src.constants import (
     EMAIL_VERIFICATION_KEY,
     EMAIL_VERIFICATION_SUBJECT,
 )
-from src.models import User
+from src.models import InternalUser, User
+from src.services.auth import get_user, hasher
 from src.services.cache import get_redis
 from src.services.db import get_db
 from src.services.email import send_email
 
 router = APIRouter()
-hasher = PasswordHasher()
 
 
 @router.post("/users")
@@ -38,12 +38,11 @@ async def create_user(
 
     # Insert user into database
     try:
-        async with db.transaction():
-            await db.execute(
-                "INSERT INTO users (email, password_hash) VALUES ($1, $2)",
-                user.email,
-                password_hash,
-            )
+        await db.execute(
+            "INSERT INTO users (email, password_hash) VALUES ($1, $2)",
+            user.email,
+            password_hash,
+        )
     except UniqueViolationError as exc:
         raise HTTPException(status_code=409, detail="Email already registered") from exc
 
@@ -77,3 +76,30 @@ async def create_user(
         raise HTTPException(
             status_code=502, detail="Verification email delivery failed"
         ) from exc
+
+
+@router.post("/users/verify")
+async def verify_user(
+    code: Annotated[str, Form(min_length=4, max_length=4)],
+    user: InternalUser = Depends(get_user),
+    db: Connection = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+):
+    # Reject if user is already verified
+    if user.verified:
+        raise HTTPException(status_code=400, detail="User already verified")
+
+    verification_key = EMAIL_VERIFICATION_KEY.format(email=user.email)
+
+    # Verify user
+    try:
+        verification_code = await redis.get(verification_key)
+    except RedisError as exc:
+        raise HTTPException(
+            status_code=503, detail="Verification storage unavailable"
+        ) from exc
+    if verification_code != code:
+        raise HTTPException(status_code=400, detail="Invalid verification code")
+
+    # Update user verification status
+    await db.execute("UPDATE users SET verified = TRUE WHERE email = $1", user.email)

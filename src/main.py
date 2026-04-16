@@ -18,9 +18,7 @@ async def lifespan(app: FastAPI):
     await app.state.redis.aclose()
 
 
-app = FastAPI(
-    title="Dailymotion User Registration API", version="0.1.0", lifespan=lifespan
-)
+app = FastAPI(title="User Registration API", version="0.1.0", lifespan=lifespan)
 app.include_router(router, prefix="/api")
 
 

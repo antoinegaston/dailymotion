@@ -1,3 +1,4 @@
+from typing import Callable
 from unittest.mock import AsyncMock, patch
 
 from asyncpg import Connection
@@ -106,3 +107,52 @@ async def test_create_user_rolls_back_when_email_delivery_fails(
     redis_client_mock.delete.assert_awaited_once_with(
         f"verification_code:{payload['email']}"
     )
+
+
+async def test_verify_user_rejects_unregistered_user(
+    client: AsyncClient, auth_header: Callable
+):
+    headers = auth_header("missing@example.com", "password")
+    response = await client.post("/api/users/verify", headers=headers)
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid credentials"}
+
+
+async def test_verify_user_rejects_wrong_password(
+    client: AsyncClient, auth_header: Callable
+):
+    payload = {"email": "verify@example.com", "password": "password"}
+    with patch("src.api.send_email"):
+        create_response = await client.post("/api/users", json=payload)
+    assert create_response.status_code == 200
+    headers = auth_header(payload["email"], "wrong-password")
+    response = await client.post("/api/users/verify", headers=headers)
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Invalid credentials"}
+
+
+async def test_verify_user_success(
+    client: AsyncClient,
+    db_conn: Connection,
+    auth_header: Callable,
+    redis_client_mock: AsyncMock,
+):
+    payload = {"email": "verify-success@example.com", "password": "password"}
+    with patch("src.api.send_email"):
+        create_response = await client.post("/api/users", json=payload)
+    assert create_response.status_code == 200
+    verified = await db_conn.fetchval(
+        "SELECT verified FROM users WHERE email = $1", payload["email"]
+    )
+    assert verified is False
+    code = "1234"
+    redis_client_mock.get.return_value = code
+    headers = auth_header(payload["email"], payload["password"])
+    response = await client.post(
+        "/api/users/verify", headers=headers, data={"code": code}
+    )
+    assert response.status_code == 200
+    verified = await db_conn.fetchval(
+        "SELECT verified FROM users WHERE email = $1", payload["email"]
+    )
+    assert verified is True

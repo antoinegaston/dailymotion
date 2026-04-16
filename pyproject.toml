@@ -1,7 +1,7 @@
 [project]
-name = "dailymotion"
+name = "register-me"
 version = "0.1.0"
-description = "Add your description here"
+description = "User registration service with email verification."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.11.0",
     "redis>=6.4.0",
     "uvicorn>=0.44.0",
+    "python-multipart>=0.0.26",
 ]
 
 [dependency-groups]

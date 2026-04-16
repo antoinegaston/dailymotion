@@ -1,4 +1,4 @@
-name: dailymotion
+name: register-me
 
 services:
   smtp:
@@ -12,11 +12,11 @@ services:
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
-      POSTGRES_DB: dailymotion
+      POSTGRES_DB: registry
     ports:
       - "5432:5432"
     healthcheck:
-      test: pg_isready -U user -d dailymotion
+      test: pg_isready -U user -d registry
       interval: 5s
       retries: 10
 
@@ -33,7 +33,7 @@ services:
   api:
     build: .
     environment:
-      DB_URL: postgresql://user:password@db:5432/dailymotion
+      DB_URL: postgresql://user:password@db:5432/registry
       REDIS_URL: redis://redis:6379/0
       SMTP_HOST: smtp
       SMTP_PORT: 1025

@@ -1,3 +1,4 @@
+import base64
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import AsyncIterator
@@ -77,3 +78,12 @@ async def client(
     ) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def auth_header():
+    def inner(email: str, password: str) -> dict[str, str]:
+        token = base64.b64encode(f"{email}:{password}".encode("utf-8")).decode("ascii")
+        return {"Authorization": f"Basic {token}"}
+
+    return inner
