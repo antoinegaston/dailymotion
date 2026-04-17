@@ -13,12 +13,13 @@ from src.models import InternalUser, User
 from src.services.auth import get_user, hasher
 from src.services.cache import get_redis
 from src.services.db import get_db
+from src.services.security import limit_rate
 
 public_router = APIRouter()
 private_router = APIRouter(dependencies=[Depends(get_user)])
 
 
-@public_router.post("/users")
+@public_router.post("/users", dependencies=[Depends(limit_rate("1/hour"))])
 async def create_user(
     user: User,
     db: Connection = Depends(get_db),
@@ -39,7 +40,7 @@ async def create_user(
     await issue_verification_code(user.email, settings, redis)
 
 
-@private_router.post("/users/verify")
+@private_router.post("/users/verify", dependencies=[Depends(limit_rate("1/minute"))])
 async def verify_user(
     code: Annotated[str, Form(min_length=4, max_length=4)],
     user: InternalUser = Depends(get_user),
@@ -66,7 +67,7 @@ async def verify_user(
     await db.execute("UPDATE users SET verified = TRUE WHERE email = $1", user.email)
 
 
-@private_router.post("/users/code")
+@private_router.post("/users/code", dependencies=[Depends(limit_rate("1/minute"))])
 async def resend_verification_code(
     user: InternalUser = Depends(get_user),
     settings: Settings = Depends(get_settings),

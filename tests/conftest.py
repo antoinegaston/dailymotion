@@ -1,13 +1,11 @@
 import base64
-from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import AsyncIterator
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import pytest_asyncio
 from asyncpg import Connection, Pool, create_pool
-from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from testcontainers.postgres import PostgresContainer
 
@@ -68,18 +66,13 @@ async def client(
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_redis] = _override_get_redis
     app.dependency_overrides[get_settings] = _override_get_settings
+    app.state.limiter = Mock()
 
-    @asynccontextmanager
-    async def _test_lifespan(_app: FastAPI):
-        _app.state.pool = db_pool
-        _app.state.redis = redis_client_mock
-        yield
-
-    app.router.lifespan_context = _test_lifespan
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as c:
         yield c
+
     app.dependency_overrides.clear()
 
 
