@@ -5,16 +5,16 @@ from asyncpg import Connection, UniqueViolationError
 from fastapi import APIRouter, Depends, Form, HTTPException
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
-from src.services.auth import get_user, hasher
-from src.services.cache import get_redis
-from src.services.db import get_db
-from src.services.security import limit_rate
 
 from src.config import Settings, get_settings
 from src.constants import EMAIL_VERIFICATION_KEY
 from src.helpers import issue_verification_code
 from src.logging import get_logger
 from src.models import InternalUser, User
+from src.services.auth import get_user, hasher
+from src.services.cache import get_redis
+from src.services.db import get_db
+from src.services.security import limit_rate
 
 public_router = APIRouter()
 private_router = APIRouter(dependencies=[Depends(get_user)])
@@ -53,7 +53,9 @@ async def verify_user(
 ):
     # Reject if user is already verified
     if user.verified:
-        logger.warning("Verification blocked: account already verified")
+        logger.warning(
+            "Verification blocked: account already verified (%s)", user.email
+        )
         raise HTTPException(status_code=400, detail="User already verified")
 
     verification_key = EMAIL_VERIFICATION_KEY.format(email=user.email)
@@ -62,17 +64,19 @@ async def verify_user(
     try:
         verification_code = await redis.get(verification_key)
     except RedisError as exc:
-        logger.exception("Verification lookup failed due to Redis error")
+        logger.exception(
+            "Verification lookup failed due to Redis error (%s)", user.email
+        )
         raise HTTPException(
             status_code=503, detail="Verification storage unavailable"
         ) from exc
     if verification_code != code:
-        logger.warning("Verification rejected: invalid code")
+        logger.warning("Verification rejected: invalid code (%s)", user.email)
         raise HTTPException(status_code=400, detail="Invalid verification code")
 
     # Update user verification status
     await db.execute("UPDATE users SET verified = TRUE WHERE email = $1", user.email)
-    logger.info("User verification completed")
+    logger.info("User verification completed (%s)", user.email)
 
 
 @private_router.post("/users/code", dependencies=[Depends(limit_rate("1/minute"))])
@@ -82,4 +86,4 @@ async def resend_verification_code(
     redis: Redis = Depends(get_redis),
 ):
     await issue_verification_code(user.email, settings, redis)
-    logger.info("Verification code resent")
+    logger.info("Verification code resent (%s)", user.email)
