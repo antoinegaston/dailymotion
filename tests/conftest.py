@@ -34,8 +34,12 @@ async def db_pool(postgres_url: str) -> AsyncIterator[Pool]:
 @pytest_asyncio.fixture
 async def db_conn(db_pool: Pool) -> AsyncIterator[Connection]:
     async with db_pool.acquire() as conn:
-        async with conn.transaction():
+        tr = conn.transaction()
+        await tr.start()
+        try:
             yield conn
+        finally:
+            await tr.rollback()
 
 
 @pytest_asyncio.fixture
