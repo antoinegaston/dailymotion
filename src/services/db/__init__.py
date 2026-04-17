@@ -2,9 +2,9 @@ from collections.abc import AsyncIterator
 
 from asyncpg import Connection, Pool, create_pool
 from fastapi import Request
+from src.services.db.schema import create_tables
 
 from src.config import get_settings
-from src.services.db.schema import create_tables
 
 
 async def init_pool() -> Pool:

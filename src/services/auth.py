@@ -3,9 +3,9 @@ from argon2.exceptions import VerificationError
 from asyncpg import Connection
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from src.services.db import get_db
 
 from src.models import InternalUser
-from src.services.db import get_db
 
 security = HTTPBasic()
 hasher = PasswordHasher()

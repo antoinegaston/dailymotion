@@ -7,11 +7,11 @@ import pytest
 import pytest_asyncio
 from asyncpg import Connection, Pool, create_pool
 from httpx import ASGITransport, AsyncClient
+from src.services.cache import get_redis
+from src.services.db import create_tables, get_db
 from testcontainers.postgres import PostgresContainer
 
 from src.config import get_settings
-from src.services.cache import get_redis
-from src.services.db import create_tables, get_db
 
 
 @pytest.fixture(scope="session")

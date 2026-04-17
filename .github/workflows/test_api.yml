@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - '*'
-      # - '!master' uncomment in real life protecting master branch from pushes
+      # - '!master' uncomment in real life*
 
 jobs:
   test:
@@ -19,3 +19,5 @@ jobs:
         run: uv sync --locked --all-groups
       - name: Run tests
         run: uv run pytest tests
+
+# *in real life proper github settings would be used to protect master branch from merging
