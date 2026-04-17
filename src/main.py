@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from src.api import router
+from src.api import public_router
 from src.services.cache import init_redis
 from src.services.db import create_tables, init_pool
 
@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="User Registration API", version="0.1.0", lifespan=lifespan)
-app.include_router(router, prefix="/api")
+app.include_router(public_router, prefix="/api")
 
 
 @app.get("/health")

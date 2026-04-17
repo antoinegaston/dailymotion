@@ -1,5 +1,3 @@
-from contextlib import suppress
-from secrets import randbelow
 from typing import Annotated
 
 from anyio import to_thread
@@ -9,34 +7,27 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from src.config import Settings, get_settings
-from src.constants import (
-    EMAIL_VERIFICATION_BODY,
-    EMAIL_VERIFICATION_KEY,
-    EMAIL_VERIFICATION_SUBJECT,
-)
+from src.constants import EMAIL_VERIFICATION_KEY
+from src.helpers import issue_verification_code
 from src.models import InternalUser, User
 from src.services.auth import get_user, hasher
 from src.services.cache import get_redis
 from src.services.db import get_db
-from src.services.email import SMTPError, send_email
 
-router = APIRouter()
+public_router = APIRouter()
+private_router = APIRouter(dependencies=[Depends(get_user)])
 
 
-@router.post("/users")
+@public_router.post("/users")
 async def create_user(
     user: User,
     db: Connection = Depends(get_db),
-    redis: Redis = Depends(get_redis),
     settings: Settings = Depends(get_settings),
+    redis: Redis = Depends(get_redis),
 ):
-    verification_key = EMAIL_VERIFICATION_KEY.format(email=user.email)
-    verification_code = f"{randbelow(10000):04d}"
     password_hash = await to_thread.run_sync(
         hasher.hash, user.password.get_secret_value()
     )
-
-    # Insert user into database
     try:
         await db.execute(
             "INSERT INTO users (email, password_hash) VALUES ($1, $2)",
@@ -45,36 +36,10 @@ async def create_user(
         )
     except UniqueViolationError as exc:
         raise HTTPException(status_code=409, detail="Email already registered") from exc
-
-    # Store verification code in Redis
-    try:
-        await redis.set(
-            verification_key,
-            verification_code,
-            ex=settings.verification_code_ttl_seconds,
-        )
-    except RedisError as exc:
-        raise HTTPException(
-            status_code=503, detail="Verification storage unavailable"
-        ) from exc
-
-    # Send verification email
-    try:
-        await to_thread.run_sync(
-            send_email,
-            user.email,
-            EMAIL_VERIFICATION_SUBJECT,
-            EMAIL_VERIFICATION_BODY.format(code=verification_code),
-        )
-    except SMTPError as exc:
-        with suppress(RedisError):  # Delete verification code if email delivery fails
-            await redis.delete(verification_key)
-        raise HTTPException(
-            status_code=502, detail="Verification email delivery failed"
-        ) from exc
+    await issue_verification_code(user.email, settings, redis)
 
 
-@router.post("/users/verify")
+@private_router.post("/users/verify")
 async def verify_user(
     code: Annotated[str, Form(min_length=4, max_length=4)],
     user: InternalUser = Depends(get_user),
@@ -99,3 +64,12 @@ async def verify_user(
 
     # Update user verification status
     await db.execute("UPDATE users SET verified = TRUE WHERE email = $1", user.email)
+
+
+@private_router.post("/users/code")
+async def resend_verification_code(
+    user: InternalUser = Depends(get_user),
+    settings: Settings = Depends(get_settings),
+    redis: Redis = Depends(get_redis),
+):
+    await issue_verification_code(user.email, settings, redis)
