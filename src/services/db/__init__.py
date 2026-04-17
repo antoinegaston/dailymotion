@@ -15,7 +15,8 @@ async def init_pool() -> Pool:
 async def get_db(request: Request) -> AsyncIterator[Connection]:
     pool: Pool = request.app.state.pool
     async with pool.acquire() as conn:
-        yield conn
+        async with conn.transaction():  # Rollback errored transactions
+            yield conn
 
 
 __all__ = ["init_pool", "get_db", "create_tables"]

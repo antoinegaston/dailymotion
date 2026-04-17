@@ -34,10 +34,8 @@ async def db_pool(postgres_url: str) -> AsyncIterator[Pool]:
 @pytest_asyncio.fixture
 async def db_conn(db_pool: Pool) -> AsyncIterator[Connection]:
     async with db_pool.acquire() as conn:
-        tx = conn.transaction()
-        await tx.start()
-        yield conn
-        await tx.rollback()
+        async with conn.transaction():
+            yield conn
 
 
 @pytest_asyncio.fixture
@@ -54,7 +52,8 @@ async def client(
     from src.main import app
 
     async def _override_get_db() -> AsyncIterator[Connection]:
-        yield db_conn
+        async with db_conn.transaction():
+            yield db_conn
 
     async def _override_get_redis() -> AsyncIterator[AsyncMock]:
         yield redis_client_mock

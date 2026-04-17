@@ -1,8 +1,8 @@
+import smtplib
 from typing import Callable
 from unittest.mock import AsyncMock, patch
 
 from asyncpg import Connection
-from fastapi import HTTPException
 from httpx import AsyncClient
 from redis.exceptions import RedisError
 
@@ -95,7 +95,7 @@ async def test_create_user_rolls_back_when_email_delivery_fails(
     payload = {"email": "smtp-fail@example.com", "password": "password"}
     with patch(
         "src.api.send_email",
-        side_effect=HTTPException(status_code=502, detail="SMTP delivery failed"),
+        side_effect=smtplib.SMTPException("Mock email delivery failed"),
     ):
         response = await client.post("/api/users", json=payload)
     assert response.status_code == 502

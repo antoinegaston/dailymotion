@@ -18,7 +18,7 @@ from src.models import InternalUser, User
 from src.services.auth import get_user, hasher
 from src.services.cache import get_redis
 from src.services.db import get_db
-from src.services.email import send_email
+from src.services.email import SMTPError, send_email
 
 router = APIRouter()
 
@@ -54,8 +54,6 @@ async def create_user(
             ex=settings.verification_code_ttl_seconds,
         )
     except RedisError as exc:
-        with suppress(Exception):  # Rollback user insertion if Redis is unavailable
-            await db.execute("DELETE FROM users WHERE email = $1", user.email)
         raise HTTPException(
             status_code=503, detail="Verification storage unavailable"
         ) from exc
@@ -68,9 +66,7 @@ async def create_user(
             EMAIL_VERIFICATION_SUBJECT,
             EMAIL_VERIFICATION_BODY.format(code=verification_code),
         )
-    except HTTPException as exc:
-        with suppress(Exception):  # Rollback user insertion if email delivery fails
-            await db.execute("DELETE FROM users WHERE email = $1", user.email)
+    except SMTPError as exc:
         with suppress(RedisError):  # Delete verification code if email delivery fails
             await redis.delete(verification_key)
         raise HTTPException(
