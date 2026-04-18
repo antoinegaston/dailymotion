@@ -3,7 +3,6 @@ from typing import Annotated
 from anyio import to_thread
 from asyncpg import Connection, UniqueViolationError
 from fastapi import APIRouter, Depends, Form, HTTPException
-from httpx import AsyncClient
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
@@ -15,7 +14,7 @@ from src.models import InternalUser, User
 from src.services.auth import get_user, hasher
 from src.services.cache import get_redis
 from src.services.db import get_db
-from src.services.email import get_email_client
+from src.services.email import EmailProvider, get_email_provider
 from src.services.security import limit_rate
 
 public_router = APIRouter()
@@ -29,7 +28,7 @@ async def create_user(
     db: Connection = Depends(get_db),
     settings: Settings = Depends(get_settings),
     redis: Redis = Depends(get_redis),
-    email_client: AsyncClient = Depends(get_email_client),
+    email_provider: EmailProvider = Depends(get_email_provider),
 ):
     password_hash = await to_thread.run_sync(
         hasher.hash, user.password.get_secret_value()
@@ -43,7 +42,7 @@ async def create_user(
     except UniqueViolationError as exc:
         logger.warning("Registration blocked: email already exists")
         raise HTTPException(status_code=409, detail="Email already registered") from exc
-    await issue_verification_code(user.email, settings, redis, email_client)
+    await issue_verification_code(user.email, settings, redis, email_provider)
     logger.info("User registration created and verification code issued")
 
 
@@ -80,7 +79,7 @@ async def resend_verification_code(
     user: InternalUser = Depends(require_unverified_user),
     settings: Settings = Depends(get_settings),
     redis: Redis = Depends(get_redis),
-    email_client: AsyncClient = Depends(get_email_client),
+    email_provider: EmailProvider = Depends(get_email_provider),
 ):
-    await issue_verification_code(user.email, settings, redis, email_client)
+    await issue_verification_code(user.email, settings, redis, email_provider)
     logger.info("Verification code resent (%s)", user.email)

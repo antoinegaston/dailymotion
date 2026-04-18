@@ -2,7 +2,6 @@ from contextlib import suppress
 from secrets import randbelow
 
 from fastapi import Depends, HTTPException
-from httpx import AsyncClient
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
@@ -15,7 +14,7 @@ from src.constants import (
 from src.logging import get_logger
 from src.models import InternalUser
 from src.services.auth import get_user
-from src.services.email import EmailDeliveryError, send_email
+from src.services.email import EmailDeliveryError, EmailProvider
 
 logger = get_logger(__name__)
 
@@ -24,12 +23,11 @@ async def issue_verification_code(
     email: str,
     settings: Settings,
     redis: Redis,
-    email_client: AsyncClient,
+    email_provider: EmailProvider,
 ):
     verification_key = EMAIL_VERIFICATION_KEY.format(email=email)
     verification_code = f"{randbelow(10000):04d}"
 
-    # Store verification code in Redis
     try:
         await redis.set(
             verification_key,
@@ -42,10 +40,8 @@ async def issue_verification_code(
             status_code=503, detail="Verification storage unavailable"
         ) from exc
 
-    # Send verification email through the third-party email provider (HTTP API)
     try:
-        await send_email(
-            email_client,
+        await email_provider.send(
             email,
             EMAIL_VERIFICATION_SUBJECT,
             EMAIL_VERIFICATION_BODY.format(code=verification_code),

@@ -8,7 +8,7 @@ from src.api import private_router, public_router
 from src.logging import configure_logging, get_logger
 from src.services.cache import init_redis
 from src.services.db import create_tables, init_pool
-from src.services.email import init_email_client
+from src.services.email import init_email_provider
 
 logger = get_logger(__name__)
 
@@ -20,14 +20,14 @@ async def lifespan(app: FastAPI):
     app.state.pool = await init_pool()
     app.state.redis, redis_url = await init_redis()
     app.state.limiter = MovingWindowRateLimiter(RedisStorage(redis_url))
-    app.state.email_client = await init_email_client()
+    app.state.email_provider = await init_email_provider()
     async with app.state.pool.acquire() as conn:
         await create_tables(conn)
     logger.info("API startup complete")
     yield
     await app.state.pool.close()
     await app.state.redis.aclose()
-    await app.state.email_client.aclose()
+    await app.state.email_provider.aclose()
     logger.info("API shutdown complete")
 
 
