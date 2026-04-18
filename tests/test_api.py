@@ -1,4 +1,3 @@
-import smtplib
 from typing import Callable
 from unittest.mock import AsyncMock, patch
 
@@ -8,6 +7,7 @@ from httpx import AsyncClient
 from redis.exceptions import RedisError
 
 from src.constants import EMAIL_VERIFICATION_BODY, EMAIL_VERIFICATION_SUBJECT
+from src.services.email import EmailDeliveryError
 
 
 async def test_create_user_rejects_invalid_email(client: AsyncClient):
@@ -29,7 +29,10 @@ async def test_create_user_rejects_password_too_long(client: AsyncClient):
 
 
 async def test_create_user_success(
-    client: AsyncClient, db_conn: Connection, redis_client_mock: AsyncMock
+    client: AsyncClient,
+    db_conn: Connection,
+    redis_client_mock: AsyncMock,
+    email_client_mock: AsyncMock,
 ):
     payload = {"email": "success@example.com", "password": "password"}
     with (
@@ -46,6 +49,7 @@ async def test_create_user_success(
     assert user["password_hash"] != payload["password"]
     assert user["password_hash"].startswith("$argon2id$")
     mock_send_email.assert_called_once_with(
+        email_client_mock,
         payload["email"],
         EMAIL_VERIFICATION_SUBJECT,
         EMAIL_VERIFICATION_BODY.format(code=1234),
@@ -93,10 +97,10 @@ async def test_create_user_rolls_back_when_redis_is_unavailable(
 async def test_create_user_rolls_back_when_email_delivery_fails(
     client: AsyncClient, db_conn: Connection, redis_client_mock: AsyncMock
 ):
-    payload = {"email": "smtp-fail@example.com", "password": "password"}
+    payload = {"email": "email-fail@example.com", "password": "password"}
     with patch(
         "src.helpers.send_email",
-        side_effect=smtplib.SMTPException("Mock email delivery failed"),
+        side_effect=EmailDeliveryError("Mock email delivery failed"),
     ):
         response = await client.post("/api/users", json=payload)
     assert response.status_code == 502
@@ -114,7 +118,7 @@ async def test_create_user_rolls_back_when_email_delivery_fails(
 async def test_endpoint_rejects_unregistered_user(
     client: AsyncClient, auth_header: Callable, route: str
 ):
-    headers = auth_header("missing@example.com", "password")
+    headers = auth_header("unregistered@example.com", "password")
     response = await client.post(f"/api/{route}", headers=headers)
     assert response.status_code == 401
     assert response.json() == {"detail": "Invalid credentials"}
@@ -124,7 +128,7 @@ async def test_endpoint_rejects_unregistered_user(
 async def test_endpoint_rejects_wrong_password(
     client: AsyncClient, auth_header: Callable, route: str
 ):
-    payload = {"email": "verify@example.com", "password": "password"}
+    payload = {"email": "wrong@example.com", "password": "password"}
     with patch("src.helpers.send_email"):
         create_response = await client.post("/api/users", json=payload)
     assert create_response.status_code == 200
@@ -162,7 +166,10 @@ async def test_verify_user_success(
 
 
 async def test_resend_verification_code_success(
-    client: AsyncClient, auth_header: Callable, redis_client_mock: AsyncMock
+    client: AsyncClient,
+    auth_header: Callable,
+    redis_client_mock: AsyncMock,
+    email_client_mock: AsyncMock,
 ):
     payload = {"email": "resend-success@example.com", "password": "password"}
     with (
@@ -172,6 +179,7 @@ async def test_resend_verification_code_success(
         create_response = await client.post("/api/users", json=payload)
     assert create_response.status_code == 200
     mock_send_email.assert_called_once_with(
+        email_client_mock,
         payload["email"],
         EMAIL_VERIFICATION_SUBJECT,
         EMAIL_VERIFICATION_BODY.format(code=1234),
@@ -188,6 +196,7 @@ async def test_resend_verification_code_success(
         response = await client.post("/api/users/code", headers=headers)
     assert response.status_code == 200
     mock_send_email.assert_called_once_with(
+        email_client_mock,
         payload["email"],
         EMAIL_VERIFICATION_SUBJECT,
         EMAIL_VERIFICATION_BODY.format(code=1235),
@@ -195,3 +204,24 @@ async def test_resend_verification_code_success(
     redis_client_mock.set.assert_awaited_once_with(
         f"verification_code:{payload['email']}", "1235", ex=60
     )
+
+
+@pytest.mark.parametrize("route", ["users/verify", "users/code"])
+async def test_endpoint_rejects_already_verified_user(
+    client: AsyncClient, auth_header: Callable, route: str, redis_client_mock: AsyncMock
+):
+    payload = {"email": "verified@example.com", "password": "password"}
+    with patch("src.helpers.send_email"):
+        create_response = await client.post("/api/users", json=payload)
+    assert create_response.status_code == 200
+    code = "1234"
+    redis_client_mock.get.return_value = code
+    headers = auth_header(payload["email"], payload["password"])
+    response = await client.post(
+        "/api/users/verify", headers=headers, data={"code": code}
+    )
+    assert response.status_code == 200
+    headers = auth_header(payload["email"], payload["password"])
+    response = await client.post(f"/api/{route}", headers=headers)
+    assert response.status_code == 400
+    assert response.json() == {"detail": "User already verified"}

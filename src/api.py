@@ -3,17 +3,19 @@ from typing import Annotated
 from anyio import to_thread
 from asyncpg import Connection, UniqueViolationError
 from fastapi import APIRouter, Depends, Form, HTTPException
+from httpx import AsyncClient
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from src.config import Settings, get_settings
 from src.constants import EMAIL_VERIFICATION_KEY
-from src.helpers import issue_verification_code
+from src.helpers import issue_verification_code, require_unverified_user
 from src.logging import get_logger
 from src.models import InternalUser, User
 from src.services.auth import get_user, hasher
 from src.services.cache import get_redis
 from src.services.db import get_db
+from src.services.email import get_email_client
 from src.services.security import limit_rate
 
 public_router = APIRouter()
@@ -27,6 +29,7 @@ async def create_user(
     db: Connection = Depends(get_db),
     settings: Settings = Depends(get_settings),
     redis: Redis = Depends(get_redis),
+    email_client: AsyncClient = Depends(get_email_client),
 ):
     password_hash = await to_thread.run_sync(
         hasher.hash, user.password.get_secret_value()
@@ -40,24 +43,17 @@ async def create_user(
     except UniqueViolationError as exc:
         logger.warning("Registration blocked: email already exists")
         raise HTTPException(status_code=409, detail="Email already registered") from exc
-    await issue_verification_code(user.email, settings, redis)
+    await issue_verification_code(user.email, settings, redis, email_client)
     logger.info("User registration created and verification code issued")
 
 
 @private_router.post("/users/verify", dependencies=[Depends(limit_rate("1/minute"))])
 async def verify_user(
     code: Annotated[str, Form(min_length=4, max_length=4)],
-    user: InternalUser = Depends(get_user),
+    user: InternalUser = Depends(require_unverified_user),
     db: Connection = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
-    # Reject if user is already verified
-    if user.verified:
-        logger.warning(
-            "Verification blocked: account already verified (%s)", user.email
-        )
-        raise HTTPException(status_code=400, detail="User already verified")
-
     verification_key = EMAIL_VERIFICATION_KEY.format(email=user.email)
 
     # Verify user
@@ -81,9 +77,10 @@ async def verify_user(
 
 @private_router.post("/users/code", dependencies=[Depends(limit_rate("1/minute"))])
 async def resend_verification_code(
-    user: InternalUser = Depends(get_user),
+    user: InternalUser = Depends(require_unverified_user),
     settings: Settings = Depends(get_settings),
     redis: Redis = Depends(get_redis),
+    email_client: AsyncClient = Depends(get_email_client),
 ):
-    await issue_verification_code(user.email, settings, redis)
+    await issue_verification_code(user.email, settings, redis, email_client)
     logger.info("Verification code resent (%s)", user.email)
