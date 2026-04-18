@@ -6,7 +6,8 @@ TABLES: list[str] = [
         id            INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
         email         TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
-        verified      BOOLEAN NOT NULL DEFAULT FALSE
+        verified      BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
     """,
 ]

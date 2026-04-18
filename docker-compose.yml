@@ -57,3 +57,16 @@ services:
       interval: 5s
       start_period: 10s
       retries: 10
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.cleanup-unverified.schedule: "0 0 2 * * *"
+      ofelia.job-exec.cleanup-unverified.command: "uv run python -m src.jobs.cleanup_unverified"
+
+  scheduler:
+    image: mcuadros/ofelia:latest
+    command: daemon --docker
+    depends_on:
+      api:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
