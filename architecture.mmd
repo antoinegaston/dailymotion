@@ -1,0 +1,36 @@
+flowchart LR
+    Client(["HTTP Client"])
+
+    subgraph Compose["Docker Compose · register-me"]
+        direction LR
+
+        subgraph API["api · FastAPI (uvicorn :8000)"]
+            direction TB
+            Routers["Routers (src/api.py)<br/>• POST /api/users (public, 1/h)<br/>• POST /api/users/verify (Basic, 1/m)<br/>• POST /api/users/code (Basic, 1/m)<br/>• GET /health"]
+            Helpers["Helpers (src/helpers.py)<br/>issue_verification_code<br/>require_unverified_user"]
+            Services["Services (src/services/*)<br/>db · auth (Argon2 + HTTP Basic)<br/>cache · email · security (rate limit)"]
+            State["app.state singletons<br/>asyncpg.Pool · redis.Redis<br/>httpx.AsyncClient · Limiter"]
+            Routers --> Helpers --> Services
+            Routers --> Services
+            Services --> State
+        end
+
+        PG[("db · PostgreSQL 16<br/>users(id, email UK,<br/>password_hash, verified,<br/>created_at)")]
+        R[("redis · Redis 7<br/>verification_code:{email} TTL 60s<br/>rate-limit keys")]
+        MP[["email · Mailpit<br/>HTTP /api/v1/send · UI :8025"]]
+        OF["scheduler · Ofelia<br/>cron 0 0 2 * * *<br/>docker exec → cleanup_unverified"]
+
+        API -- "asyncpg (tx per req)" --> PG
+        API -- "redis.asyncio" --> R
+        API -- "httpx POST /api/v1/send" --> MP
+        OF -. "runs src.jobs.cleanup_unverified<br/>DELETE unverified > 1 day" .-> PG
+    end
+
+    Client -- "HTTP :8000" --> API
+
+    classDef svc fill:#eef,stroke:#558,stroke-width:1px;
+    classDef ext fill:#efe,stroke:#585,stroke-width:1px;
+    classDef job fill:#fee,stroke:#855,stroke-width:1px;
+    class API svc;
+    class PG,R,MP ext;
+    class OF job;
