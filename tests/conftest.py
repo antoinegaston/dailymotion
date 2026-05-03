@@ -11,7 +11,7 @@ from testcontainers.postgres import PostgresContainer
 
 from src.config import get_settings
 from src.services.cache import get_redis
-from src.services.db import create_tables, get_db
+from src.services.db import create_tables, get_db_read_only, get_db_transaction
 from src.services.email import EmailProvider, get_email_provider
 
 
@@ -62,9 +62,12 @@ async def client(
 ) -> AsyncIterator[AsyncClient]:
     from src.main import app
 
-    async def _override_get_db() -> AsyncIterator[Connection]:
+    async def _override_get_db_transaction() -> AsyncIterator[Connection]:
         async with db_conn.transaction():
             yield db_conn
+
+    async def _override_get_db_read_only() -> AsyncIterator[Connection]:
+        yield db_conn
 
     async def _override_get_redis() -> AsyncIterator[AsyncMock]:
         yield redis_client_mock
@@ -75,7 +78,8 @@ async def client(
     async def _override_get_settings() -> AsyncIterator[SimpleNamespace]:
         yield SimpleNamespace(verification_code_ttl_seconds=60)
 
-    app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_db_transaction] = _override_get_db_transaction
+    app.dependency_overrides[get_db_read_only] = _override_get_db_read_only
     app.dependency_overrides[get_redis] = _override_get_redis
     app.dependency_overrides[get_email_provider] = _override_get_email_provider
     app.dependency_overrides[get_settings] = _override_get_settings

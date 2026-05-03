@@ -2,9 +2,9 @@ from collections.abc import AsyncIterator
 
 from asyncpg import Connection, Pool, create_pool
 from fastapi import Request
-from src.services.db.schema import create_tables
 
 from src.config import get_settings
+from src.services.db.schema import create_tables
 
 
 async def init_pool() -> Pool:
@@ -12,11 +12,17 @@ async def init_pool() -> Pool:
     return await create_pool(dsn=str(settings.db_url))
 
 
-async def get_db(request: Request) -> AsyncIterator[Connection]:
+async def get_db_transaction(request: Request) -> AsyncIterator[Connection]:
     pool: Pool = request.app.state.pool
     async with pool.acquire() as conn:
         async with conn.transaction():  # Rollback errored transactions
             yield conn
 
 
-__all__ = ["init_pool", "get_db", "create_tables"]
+async def get_db_read_only(request: Request) -> AsyncIterator[Connection]:
+    pool: Pool = request.app.state.pool
+    async with pool.acquire() as conn:
+        yield conn
+
+
+__all__ = ["init_pool", "get_db_transaction", "create_tables"]

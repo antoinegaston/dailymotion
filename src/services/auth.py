@@ -3,9 +3,9 @@ from argon2.exceptions import VerificationError
 from asyncpg import Connection
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from src.services.db import get_db
 
 from src.models import InternalUser
+from src.services.db import get_db_read_only
 
 security = HTTPBasic()
 hasher = PasswordHasher()
@@ -14,7 +14,7 @@ dummy_password_hash = hasher.hash("invalid-password")
 
 async def get_user(
     credentials: HTTPBasicCredentials = Depends(security),
-    db: Connection = Depends(get_db),
+    db: Connection = Depends(get_db_read_only),
 ) -> InternalUser:
     user = await db.fetchrow(
         "SELECT email, password_hash, verified FROM users WHERE email = $1",

@@ -13,7 +13,7 @@ from src.logging import get_logger
 from src.models import InternalUser, User
 from src.services.auth import get_user, hasher
 from src.services.cache import get_redis
-from src.services.db import get_db
+from src.services.db import get_db_transaction
 from src.services.email import EmailProvider, get_email_provider
 from src.services.security import limit_rate
 
@@ -25,7 +25,7 @@ logger = get_logger(__name__)
 @public_router.post("/users", dependencies=[Depends(limit_rate("1/hour"))])
 async def create_user(
     user: User,
-    db: Connection = Depends(get_db),
+    db: Connection = Depends(get_db_transaction),
     settings: Settings = Depends(get_settings),
     redis: Redis = Depends(get_redis),
     email_provider: EmailProvider = Depends(get_email_provider),
@@ -50,7 +50,7 @@ async def create_user(
 async def verify_user(
     code: Annotated[str, Form(min_length=4, max_length=4)],
     user: InternalUser = Depends(require_unverified_user),
-    db: Connection = Depends(get_db),
+    db: Connection = Depends(get_db_transaction),
     redis: Redis = Depends(get_redis),
 ):
     verification_key = EMAIL_VERIFICATION_KEY.format(email=user.email)
